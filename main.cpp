@@ -1,0 +1,135 @@
+#include <SFML/Graphics.hpp>
+#include <optional> // Required for SFML 3.0 events
+#include <memory>
+#include <vector>
+
+#include "imgui.h"
+#include "imgui-SFML.h"
+
+#define SMALL_G 981.f 
+#define FRAME_X 1440 
+#define FRAME_Y 900 
+
+#define GRID_X (int)(FRAME_X/10)
+#define GRID_Y (int)(FRAME_Y/10)
+#define COEFF_REST 0.7f
+
+class Particle{
+private:
+  float m;
+  sf::Vector2f pos;
+  std::unique_ptr<sf::Shape> sh;
+  sf::Vector2f vel;
+  sf::Vector2f bounds;
+  
+public:
+  Particle(float mass, sf::Vector2f position, std::unique_ptr<sf::Shape> shape, sf::Color color, sf::Vector2f origin, sf::Vector2f velocity): m(mass), pos(position), sh(std::move(shape)), vel(velocity) {
+    sh->setOrigin(origin);
+    sh->setFillColor(color);
+    bounds = sh->getLocalBounds().size;
+  }
+  
+  void draw(sf::RenderWindow& window){
+    sh->setPosition(pos);
+    window.draw(*sh);
+  }
+
+  void update(float dt){
+   vel.y += SMALL_G * dt;
+    pos += vel * dt;
+
+    if(pos.y + (bounds.y / 2.f) > FRAME_Y){
+      pos.y = FRAME_Y - (bounds.y / 2.f);
+      vel.y *= -COEFF_REST;
+    }
+    if(pos.x + (bounds.x / 2.f) > FRAME_X){
+      pos.x = FRAME_X - (bounds.x / 2.f);
+      vel.x *= -COEFF_REST;
+    }
+    if(pos.y - (bounds.y / 2.f) < 0){
+      pos.y = (bounds.y / 2.f);
+      vel.y *= -COEFF_REST;
+    }
+    if(pos.x - (bounds.x / 2.f) < 0){
+      pos.x = (bounds.x / 2.f);
+      vel.x *= -COEFF_REST;
+    }
+  }
+
+  virtual ~Particle() = default;
+  
+};
+
+class CircleParticle : public Particle{
+public:
+  CircleParticle(float mass, sf::Vector2f p, float radius, sf::Color color, sf::Vector2f vel = {0.f, 0.f}): Particle(mass, p, std::make_unique<sf::CircleShape>(radius), color, {radius, radius}, vel){}
+};
+
+int main() {
+  // SFML 3.0: VideoMode now takes a Vector2u (braces) and State
+  sf::RenderWindow window(sf::VideoMode({FRAME_X, FRAME_Y}), "SFML 3.0 Test", sf::Style::Close | sf::Style::Resize);
+  ImGui::SFML::Init(window);
+  
+  bool isPaused = true;
+  sf::Clock clock;
+  
+  std::vector<std::unique_ptr<Particle>> particles;
+  
+  //  CircleParticle p{10, {100, 100}, 20.f, sf::Color::Red};
+  
+  // Main Loop
+  while (window.isOpen()) {
+    sf::Time elapsed = clock.restart();
+    float dt = elapsed.asSeconds();
+    
+    // SFML 3.0: pollEvent returns a std::optional<sf::Event>
+    while (const std::optional event = window.pollEvent()) {
+      ImGui::SFML::ProcessEvent(window, *event);
+      // Check if the event is 'Closed' using the new type-safe API
+      ImGuiIO& io = ImGui::GetIO();
+      
+      if (event->is<sf::Event::Closed>()) {
+	window.close();
+      }
+     
+      if(const auto* mouse = event->getIf<sf::Event::MouseButtonPressed>()){
+	if(mouse->button == sf::Mouse::Button::Left && !io.WantCaptureMouse){
+	  sf::Vector2f mousePos = sf::Vector2f(mouse->position);
+	  particles.push_back(std::make_unique<CircleParticle> (10.0f, mousePos, 15.0f, sf::Color::Cyan, sf::Vector2f{80.f, 10.0f}));
+	}
+      }
+    }
+ 
+    ImGui::SFML::Update(window, elapsed);
+    ImGui::Begin("Control Centre");
+
+    if(ImGui::Button("Clear All")){
+      particles.clear();
+    }
+
+    if(ImGui::Button(isPaused ? "Play" : "Pause")){
+      isPaused = !isPaused;
+    }
+
+    
+    ImGui::End();
+    
+    
+    window.clear(sf::Color::Black);
+
+    if(!isPaused){
+      for(auto& p: particles){
+	p->update(dt);
+      }
+    }
+    for(auto& p: particles){
+      p->draw(window);
+    }
+ 
+   ImGui::SFML::Render(window);
+    window.display();
+  }
+  
+  ImGui::SFML::Shutdown();
+  return 0;
+}
